@@ -12,14 +12,19 @@ import EventKitUI
 
 final class CalendarViewController: DayViewController, EKEventEditViewDelegate {
     private var eventStore = EKEventStore()
+    private let openAIService = OpenAIService(apiKey: "YOUR_API_KEY")
     
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Calendar"
         // The app must have access to the user's calendar to show the events on the timeline
         requestAccessToCalendar()
-        // Subscribe to notifications to reload the UI when 
+        // Subscribe to notifications to reload the UI when
         subscribeToNotifications()
+        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Plan with ChatGPT",
+                                                            style: .plain,
+                                                            target: self,
+                                                            action: #selector(planWithChatGPT))
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -160,6 +165,29 @@ final class CalendarViewController: DayViewController, EKEventEditViewDelegate {
             }
         }
         reloadData()
+    }
+
+    @objc private func planWithChatGPT() {
+        let startDate = Date()
+        guard let endDate = calendar.date(byAdding: .day, value: 7, to: startDate) else { return }
+        let predicate = eventStore.predicateForEvents(withStart: startDate,
+                                                     end: endDate,
+                                                     calendars: nil)
+        let upcomingEvents = eventStore.events(matching: predicate)
+        openAIService.fetchSuggestions(for: upcomingEvents) { [weak self] suggestions in
+            guard let self = self else { return }
+            for suggestion in suggestions {
+                let event = EKEvent(eventStore: self.eventStore)
+                event.calendar = self.eventStore.defaultCalendarForNewEvents
+                event.title = suggestion.title
+                event.startDate = suggestion.startDate
+                event.endDate = suggestion.endDate
+                try? self.eventStore.save(event, span: .thisEvent)
+            }
+            DispatchQueue.main.async {
+                self.reloadData()
+            }
+        }
     }
     
     
